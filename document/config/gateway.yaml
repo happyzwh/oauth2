@@ -1,0 +1,73 @@
+server:
+  port: 7000
+spring:
+  cloud:
+    gateway:
+      discovery:
+        locator:
+          lowerCaseServiceId: true
+          enabled: true
+      routes:
+        - id: auth-root
+          uri: lb://auth
+          order: -1
+          predicates:
+            - Path=/**
+          filters:
+            - CircuitBreaker=auth
+            - PreserveHostHeader
+            - StripPrefix=0
+        - id: auth
+          uri: lb://auth
+          order: -10
+          predicates:
+            - Path=/auth/**
+          filters:
+            - CircuitBreaker=auth
+            - PreserveHostHeader
+            - StripPrefix=1
+        - id: user
+          uri: lb://user
+          order: -10
+          predicates:
+            - Path=/user/**
+          filters:
+            - CircuitBreaker=user
+            - StripPrefix=1
+# 熔断配置
+# 断路器
+# Resilience4j的circuitbreaker组件实现了断路器功能。它是基于内存的断路器，采用ConcurrentHashMap来实现。
+# 断路器的功能主要是处理熔断。当客户端调用服务端出现问题时进行拦截，直接返回，不再发送请求给服务端，减少下游服务的冲击。
+resilience4j.circuitbreaker: # 断路器
+  configs:
+    default:
+      slidingWindowSize: 1000 # 滑动窗口大小。默认为1000毫秒（1秒）。
+      minimumNumberOfCalls: 5 # 最小调用次数。默认为10次。例如，若minimumNumberOfCalls是10，为计算失败率，则最小要记录10个调用。若只记录了9个调用，即使9个都失败，CircuitBreaker也不会打开。
+      permittedNumberOfCallsInHalfOpenState: 10 # 当CircuitBreaker是半开状态时，被允许的调用次数。默认为10次。
+      automaticTransitionFromOpenToHalfOpenEnabled: true # 默认为false。如果为true，则CircuitBreaker会自动从打开状态转化为半开状态。不需要另外的调用来触发这种转换。
+      waitDurationInOpenState: 10s # CircuitBreaker状态从打开转化为半开时，需要等待的时长。默认为60000毫秒（60秒）。
+      failureRateThreshold: 50 # 以百分率形式配置失败率阈值。失败率大于等于阈值时，CircuitBreaker转变为打开状态，并使调用短路。默认为50（即50%）。
+      eventConsumerBufferSize: 100
+      slowCallDurationThreshold: 50000ms # 调用执行的时长阈值。当超过这个阈值时，调用会被认为是慢调用，并增加慢调用率。默认为60000毫秒（60秒）。
+      slowCallRateThreshold: 100 # 默认为100（即100%）。以百分率形式配置慢调用率阈值。当调用执行的时长大于slowCallDurationThreshold时，CircuitBreaker会认为调用为慢调用。当慢调用占比大于等于此阈值时，CircuitBreaker转变为打开状态，并使调用短路。
+      recordExceptions: # 默认为empty。这个异常列表用来存放被当作失败的异常，这些异常发生时会增加失败率。任何异常，只要不是在ignoreExceptions中被明确忽略的，如果匹配或继承自异常列表中的异常，都会当作失败。若设置了异常列表，不在异常列表中的异常，只要不在ignoreExceptions中存在，都会当作成功。
+        - org.springframework.web.client.HttpServerErrorException
+        - java.io.IOException
+      ignoreExceptions: # 默认为empty。这个异常列表用来存放可忽略的异常，这些异常即不当作成功也不当作失败。任何异常，只要匹配或继承自此异常列表中的异常，都不会当作成功或失败，即使recordExceptions中存在这个异常。
+        - java.lang.IllegalStateException
+    instances:
+      auth:
+        baseConfig: default
+      user:
+        baseConfig: default
+# 限时器
+resilience4j.timelimiter:
+  configs:
+    default:
+      timeoutDuration: 1s # 超时时间
+      cancelRunningFuture: false # 如果此时正在进行异步调用，是否要取消。
+    instances:
+      auth:
+        baseConfig: default
+      user:
+        baseConfig: default
